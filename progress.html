@@ -922,7 +922,11 @@ window.DATA={"maps":{"type":"FeatureCollection","features":[{"type":"Feature","p
   const labels = L.layerGroup(F.map(f => L.marker([f.properties.ly, f.properties.lx], { interactive: false, keyboard: false,
     icon: L.divIcon({ className: 'num', html: f.properties.num, iconSize: null }) })));
   const LBL = labels.getLayers(); labels.clearLayers(); labels.addTo(map);
-  function labelToggle() { labels.clearLayers(); if (map.getZoom() < 13.75) return; const b = map.getBounds().pad(0.2); LBL.forEach(m => { if (b.contains(m.getLatLng())) labels.addLayer(m); }); }
+  function labelToggle() { labels.clearLayers(); if (map.getZoom() < 14) return; const b = map.getBounds().pad(0.1), boxes = [];
+    const LB = layer.getLayers().map(l => l.getBounds());
+    LBL.forEach((m, i) => { if (!b.contains(m.getLatLng())) return; const pt = map.latLngToContainerPoint(m.getLatLng()), w = 52, h = 16;
+      const ne = map.latLngToContainerPoint(LB[i].getNorthEast()), sw = map.latLngToContainerPoint(LB[i].getSouthWest()); if (ne.x - sw.x < w * 0.9 || sw.y - ne.y < h * 1.4) return;
+      if (boxes.some(q => Math.abs(q.x - pt.x) < w && Math.abs(q.y - pt.y) < h)) return; boxes.push(pt); labels.addLayer(m); }); }
   map.on('moveend', labelToggle); labelToggle();
 
   function legend() {

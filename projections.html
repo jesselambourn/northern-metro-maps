@@ -195,9 +195,12 @@ map.fitBounds(geo.getBounds(),{padding:[20,20]});
 const labels = L.layerGroup().addTo(map);
 function isDark(hex){ const n=parseInt(hex.slice(1),16); const r=n>>16,g=n>>8&255,b=n&255; return (0.299*r+0.587*g+0.114*b) < 130; }
 function drawLabels(){
-  labels.clearLayers(); const z=map.getZoom(); if (z<12) return; const bb=map.getBounds().pad(0.2);
+  labels.clearLayers(); const z=map.getZoom(); if (z<13) return; const bb=map.getBounds().pad(0.1), boxes=[];
   ALL.forEach(p=>{ if(!bb.contains([p.ly,p.lx])) return; const c=fill(p); const dark = c && isDark(c) && opacity>.5;
-    const extra = c && z>=14 ? ` <span class="g">#${metric.rk(p)}/${p.c}</span>` : '';
+    const extra = c && z>=15 ? ` <span class="g">#${metric.rk(p)}/${p.c}</span>` : '';
+    const pt=map.latLngToContainerPoint([p.ly,p.lx]), w=extra?100:50, h=15;
+    const lb=layers[p.num].getBounds(), ne=map.latLngToContainerPoint(lb.getNorthEast()), sw=map.latLngToContainerPoint(lb.getSouthWest()); if (ne.x-sw.x < 45 || sw.y-ne.y < 20) return;
+    if (boxes.some(q=>Math.abs(q.x-pt.x)<(q.w+w)/2 && Math.abs(q.y-pt.y)<h)) return; boxes.push({x:pt.x,y:pt.y,w});
     labels.addLayer(L.marker([p.ly,p.lx],{interactive:false,keyboard:false,
       icon:L.divIcon({className:'',html:`<div class="lbl ${dark?'dark':''} ${z<14?'small':''}">${p.num}${extra}</div>`,iconSize:[110,14],iconAnchor:[55,7]})}));
   });
