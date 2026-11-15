@@ -17,7 +17,7 @@
   --display:"Archivo",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
 }
 @media (prefers-color-scheme: dark){:root{--bg:#141917; --panel:#1c2320; --fg:#e8ece9; --muted:#9aa69f; --line:#36403b; --off:#2a322e; --hi:#ff5c86; color-scheme:dark}}
-*{box-sizing:border-box}
+*{box-sizing:border-box} [hidden]{display:none!important}
 body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--display);font-size:15px;line-height:1.5}
 .wrap{max-width:1200px;margin:0 auto;padding:20px max(16px,env(safe-area-inset-right,0px)) 48px max(16px,env(safe-area-inset-left,0px));display:grid;gap:16px}
 h1{font-weight:800;font-size:clamp(24px,4vw,34px);margin:0;letter-spacing:-.01em}
@@ -45,6 +45,10 @@ tr.row{cursor:pointer} tr.row:hover td{background:var(--off)}
 tr.row.sel td{background:color-mix(in srgb,var(--hi) 14%,transparent)}
 tr.cut td{border-top:2px solid var(--fg)}
 .k{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--fg);color:var(--panel);font-weight:800;font-size:12px}
+.tabs{display:flex;gap:6px;border-bottom:1px solid var(--line)}
+.tab{font:inherit;font-weight:600;padding:8px 14px;border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;background:none;color:var(--muted);cursor:pointer;margin-bottom:-1px}
+.tab.on{background:var(--panel);border-color:var(--line);color:var(--fg)}
+.tab:focus-visible{outline:2px solid var(--hi)}
 .notes{color:var(--muted);font-size:13.5px;max-width:80ch;display:grid;gap:6px} .notes p{margin:0}
 </style>
 </head>
@@ -54,17 +58,27 @@ tr.cut td{border-top:2px solid var(--fg)}
     <h1>Mill Park letterbox picks</h1>
     <p class="lede" id="lede"></p>
   </header>
-  <div class="bar">
+  <div class="tabs" role="tablist">
+    <button class="tab on" id="t-cl" role="tab" aria-selected="true">Clusters</button>
+    <button class="tab" id="t-heat" role="tab" aria-selected="false">Heatmap</button>
+  </div>
+  <div class="bar" id="clbar">
     <label for="nshow">Clusters to letterbox</label>
     <input id="nshow" type="range" min="1" max="20" value="8">
     <span class="tot" id="tot"></span>
   </div>
   <div id="map"></div>
   <div class="legend" id="legend"></div>
-  <div class="tblw">
+  <div class="tblw" id="cltbl">
     <table>
       <thead><tr><th>#</th><th>App maps (Mill-Park-…)</th><th>Area</th><th class="n">Maps</th><th class="n">Letterboxes</th><th class="n">Likely supporters</th><th class="n">Per 100 enrolled homes</th><th class="n">Score</th></tr></thead>
       <tbody id="tb"></tbody>
+    </table>
+  </div>
+  <div class="tblw" id="heattbl" hidden>
+    <table>
+      <thead><tr><th class="n">Rank</th><th>Map</th><th>Area</th><th class="n">Letterboxes</th><th class="n">% enrolled</th><th class="n">Likely supporters</th><th class="n">Per 100 letterboxes</th><th>Cluster</th></tr></thead>
+      <tbody id="htb"></tbody>
     </table>
   </div>
   <div class="notes">
@@ -90,11 +104,19 @@ const bases=light?{'Light street map':light,'OpenStreetMap':osm,'Esri street map
 (light||osm).addTo(map);
 L.control.attribution({prefix:false}).addTo(map);
 L.control.layers(bases,null,{position:'topright'}).addTo(map);
-let n=8, sel=null;
+let n=8, sel=null, mode='cl';
+const HV=F.filter(f=>f.properties.c>=0).map(f=>f.properties.s).sort((a,b)=>a-b);
+const HQ=[1,2,3,4,5,6].map(i=>HV[Math.floor(i/7*(HV.length-1))]);
+const HPAL=['#fff5c4','#fde39a','#fbc56f','#f59e4f','#e56b3b','#c43a32','#8a1530'];
+const hbin=s=>{let i=0;while(i<6&&s>=HQ[i])i++;return i};
+
 const tipHtml=p=>`<b>Mill-Park-${p.n}</b> · ${p.sub}<br>${p.e} likely supporters in ${p.h} enrolled homes (${p.ph} per 100)<br>${p.lb} letterboxes, ${p.or}% enrolled<br>Score <b>${p.s}</b> · map rank ${p.r} of ${F.length}<br>Biggest group: ${p.g}<br>${p.c<0?'Already '+p.st+' (candidate leaflet)':p.c?'Cluster '+p.c:'Not in a cluster'}`;
 const mapLayer=L.geoJSON(D.maps,{style:f=>styleMap(f.properties),onEachFeature:(f,l)=>{l.bindTooltip(tipHtml(f.properties),{sticky:true});
   l.on('click',()=>{if(f.properties.c>0)pick(f.properties.c)})}}).addTo(map);
-function styleMap(p){const on=p.c>0&&p.c<=n;
+function styleMap(p){
+  if(mode==='heat'){if(p.c<0)return{fillColor:DONE,fillOpacity:.55,color:'#4a5550',weight:.8,opacity:.8};
+    return{fillColor:HPAL[hbin(p.s)],fillOpacity:.72,color:'#3a2a2a',weight:.7,opacity:.8}}
+  const on=p.c>0&&p.c<=n;
   if(p.c<0)return{fillColor:DONE,fillOpacity:.55,color:'#4a5550',weight:.8,opacity:.8};
   if(on)return{fillColor:PAL[bin(p.s)],fillOpacity:.62,color:'#3a2a2a',weight:.8,opacity:.8};
   return{fillColor:'#ffffff',fillOpacity:.05,color:'#55606a',weight:.6,opacity:.6}}
@@ -112,6 +134,12 @@ const rows=C.map(f=>{const c=f.properties;const tr=document.createElement('tr');
 function pick(k,zoom){sel=sel===k?null:k;draw();
   if(sel&&zoom){const f=C.find(f=>f.properties.k===sel);map.fitBounds(L.geoJSON(f).getBounds(),{padding:[40,40]});$('#map').scrollIntoView({behavior:'smooth',block:'center'})}}
 function draw(){n=+$('#nshow').value;
+  const heat=mode==='heat';
+  $('#clbar').hidden=heat;$('#cltbl').hidden=heat;$('#heattbl').hidden=!heat;
+  $('#t-cl').classList.toggle('on',!heat);$('#t-heat').classList.toggle('on',heat);
+  $('#t-cl').setAttribute('aria-selected',!heat);$('#t-heat').setAttribute('aria-selected',heat);
+  legend();
+  if(heat){mapLayer.setStyle(f=>styleMap(f.properties));clLayer.setStyle(()=>({opacity:0}));badges.forEach(({mk})=>mk.remove());return}
   mapLayer.setStyle(f=>styleMap(f.properties));
   clLayer.setStyle(f=>({fill:false,color:f.properties.k===sel?'#b0123f':'#111',weight:f.properties.k===sel?5:3,opacity:f.properties.k<=n?1:0}));
   badges.forEach(({p,mk})=>{if(p.k<=n){mk.addTo(map);const el=mk.getElement();if(el)el.firstChild.classList.toggle('sel',p.k===sel)}else mk.remove()});
@@ -119,8 +147,18 @@ function draw(){n=+$('#nshow').value;
   const cs=C.slice(0,n).map(f=>f.properties),hh=cs.reduce((a,c)=>a+c.h,0),lb=cs.reduce((a,c)=>a+c.lb,0),e=cs.reduce((a,c)=>a+c.e,0),nm=cs.reduce((a,c)=>a+c.maps.length,0);
   $('#tot').innerHTML=`<b>${n}</b> clusters · <b>${nm}</b> maps · <b>${lb.toLocaleString()}</b> letterboxes · <b>${Math.round(e)}</b> likely supporters · <b>${(100*e/hh).toFixed(1)}</b> per 100 enrolled homes · score <b>${(100*e/hh*Math.min(hh/lb,1)**1.0).toFixed(1)}</b> (district ${D.avg})`}
 $('#nshow').max=C.length;$('#nshow').addEventListener('input',draw);
-$('#lede').innerHTML=`All ${F.length} Mill Park doorknock maps. The ${D.ndone} already letterboxed or assigned are greyed out; the rest are grouped into clusters of 3 or more touching maps, ranked by <b>likely supporters per enrolled home</b>. Pick how many clusters you can cover; click a cluster to zoom to it. Map numbers show from zoom 14.`;
-$('#legend').innerHTML='Score: '+['under '+qs[0],qs[0]+'–'+qs[1],qs[1]+'–'+qs[2],qs[2]+'–'+qs[3],qs[3]+'+'].map((l,i)=>`<span><i class="sw" style="background:${PAL[i]}"></i>${l}</span>`).join('')+`<span><i class="sw" style="background:${DONE}"></i>already letterboxed or assigned</span><span><i class="sw" style="background:transparent"></i>not picked</span>`;
+$('#lede').innerHTML=`All ${F.length} Mill Park doorknock maps. The ${D.ndone} already letterboxed or assigned are greyed out; the rest are grouped into clusters of 3 or more touching maps, ranked by <b>likely supporters per letterbox</b>. Pick how many clusters you can cover; click a cluster to zoom to it. The Heatmap tab colours every map not yet completed or assigned. Map numbers show from zoom 14.`;
+function legend(){if(mode==='heat'){$('#legend').innerHTML='Likely supporters per 100 letterboxes: '+HPAL.map((c,i)=>`<span><i class="sw" style="background:${c}"></i>${i===0?'under '+HQ[0]:i===6?HQ[5]+'+':HQ[i-1]+'–'+HQ[i]}</span>`).join('')+`<span><i class="sw" style="background:${DONE}"></i>completed or assigned</span>`;return}
+$('#legend').innerHTML='Score: '+['under '+qs[0],qs[0]+'–'+qs[1],qs[1]+'–'+qs[2],qs[2]+'–'+qs[3],qs[3]+'+'].map((l,i)=>`<span><i class="sw" style="background:${PAL[i]}"></i>${l}</span>`).join('')+`<span><i class="sw" style="background:${DONE}"></i>already letterboxed or assigned</span><span><i class="sw" style="background:transparent"></i>not picked</span>`}
+const htb=$('#htb');
+F.filter(f=>f.properties.c>=0).map(f=>f.properties).sort((a,b)=>b.s-a.s).forEach((p,i)=>{const tr=document.createElement('tr');tr.className='row';tr.tabIndex=0;
+  tr.innerHTML=`<td class="n">${i+1}</td><td class="maps">Mill-Park-${p.n}</td><td>${p.sub}</td><td class="n">${p.lb}</td><td class="n">${p.or}%</td><td class="n">${p.e}</td><td class="n">${p.s.toFixed(1)}</td><td>${p.c>0?p.c:'–'}</td>`;
+  const go=()=>{map.setView([p.lat,p.lon],15);$('#map').scrollIntoView({behavior:'smooth',block:'center'})};
+  tr.addEventListener('click',go);tr.addEventListener('keydown',e=>{if(e.key==='Enter')go()});htb.append(tr)});
+function setMode(m){mode=m;try{history.replaceState(null,'',m==='heat'?'#heatmap':'#clusters')}catch(e){}draw()}
+$('#t-cl').addEventListener('click',()=>setMode('cl'));$('#t-heat').addEventListener('click',()=>setMode('heat'));
+window.addEventListener('hashchange',()=>{const m=location.hash==='#heatmap'?'heat':'cl';if(m!==mode){mode=m;draw()}});
+mode=location.hash==='#heatmap'?'heat':'cl';
 draw();
 </script>
 </body>
